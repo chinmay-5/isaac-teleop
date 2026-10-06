@@ -1,0 +1,13 @@
+# UV / Python
+.venv/
+__pycache__/
+*.pyc
+uv.lock
+
+# Zephyr build artifacts
+build/
+**/build/
+
+
+# Zephyr generated files
+.west/
