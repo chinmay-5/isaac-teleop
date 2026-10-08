@@ -10,10 +10,9 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-#define IMU_NODE      DT_ALIAS(accel0)
 #define DISPLAY_NODE  DT_CHOSEN(zephyr_display)
 
-static const struct device *imu = DEVICE_DT_GET(IMU_NODE);
+static const struct device *imu = DEVICE_DT_GET_ONE(st_lsm6dsl);
 static const struct device *display = DEVICE_DT_GET(DISPLAY_NODE);
 
 
@@ -229,8 +228,8 @@ int main(void)
 
 
         /* ---------------------------------------------
-        * Format OLED values
-        * --------------------------------------------- */
+         * Format OLED values
+         * --------------------------------------------- */
 
         char ax[10];
         char ay[10];
@@ -250,17 +249,17 @@ int main(void)
 
 
         /* ---------------------------------------------
-        * OLED
-        * --------------------------------------------- */
+         * OLED
+         * --------------------------------------------- */
 
         cfb_framebuffer_clear(display, false);
 
         /*
-        * Keep the two columns separated.
-        *
-        * Left:  ACC
-        * Right: GYR
-        */
+         * Keep the two columns separated.
+         *
+         * Left:  ACC
+         * Right: GYR
+         */
         cfb_print(display, "ACC", 0, 0);
         cfb_print(display, "GYR", 70, 0);
 
