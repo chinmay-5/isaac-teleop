@@ -1,13 +1,37 @@
-cmake_minimum_required(VERSION 3.13.1)
+#  Copyright (c) Microsoft
+#  Copyright (c) 2024 Eclipse Foundation
+# 
+#  This program and the accompanying materials are made available 
+#  under the terms of the MIT license which is available at
+#  https://opensource.org/license/mit.
+# 
+#  SPDX-License-Identifier: MIT
+# 
+#  Contributors: 
+#     Microsoft         - Initial version
+#     Frédéric Desbiens - 2024 version.
 
-list(APPEND ZEPHYR_EXTRA_MODULES
-    ${CMAKE_CURRENT_SOURCE_DIR}/modules/libmicroros
-)
+cmake_minimum_required(VERSION 3.5 FATAL_ERROR)
+set(CMAKE_C_STANDARD 99)
 
-find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+set(DEPS_DIR ${CMAKE_SOURCE_DIR}/deps)
+set(SHARED_SRC_DIR ${DEPS_DIR}/src)
+set(SHARED_LIB_DIR ${DEPS_DIR}/lib)
 
-project(isaac_teleop)
+# Set the toolchain if not defined
+if(NOT CMAKE_TOOLCHAIN_FILE)
+    set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/cmake/arm-gcc-cortex-m4.cmake")
+endif()
 
-target_sources(app PRIVATE
-    src/main.c
-)
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
+
+include(utilities)
+
+# Define the Project
+# CXX enables IntelliSense only. Sources are still compiled as C.
+project(mxchip_threadx C CXX ASM)
+
+add_subdirectory(${SHARED_SRC_DIR} shared_src)
+add_subdirectory(lib)
+add_subdirectory(app)
+
