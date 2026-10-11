@@ -1,251 +1,236 @@
 # Isaac Teleop
 
-Robotics teleoperation project built around the **MXChip AZ3166 IoT DevKit** and **Zephyr RTOS**.
+Firmware for the MXChip AZ3166 IoT DevKit, developed as the hardware interface for the Isaac Teleop project.
 
-## Current Status
-
-The current firmware milestone is intentionally simple:
-
-- Read accelerometer data from the onboard **LSM6DSL**
-- Read gyroscope data from the onboard **LSM6DSL**
-- Configure IMU sampling rate at runtime
-- Display IMU data on the onboard **128×64 SSD1306 OLED**
-- Print IMU data over the serial console
-
-ROS 2 and Isaac Sim integration will be added in later milestones.
+The firmware uses Eclipse ThreadX and reads accelerometer and gyroscope measurements from the onboard LSM6DSL IMU. The measurements are printed to the console and displayed on the onboard SSD1306 OLED.
 
 ## Hardware
 
-### MXChip AZ3166 IoT DevKit
+- **Development board:** MXChip AZ3166 IoT DevKit
+- **Microcontroller:** STM32F412
+- **IMU:** ST LSM6DSL accelerometer and gyroscope
+- **Display:** SSD1306 OLED, 128 × 64 pixels
+- **Connectivity:** Onboard Wi-Fi
 
-The board provides:
+## Software Stack
 
-- STM32F412 MCU
-- LSM6DSL 6-axis IMU
-  - 3-axis accelerometer
-  - 3-axis gyroscope
-- SSD1306 128×64 OLED
-- I²C bus for onboard sensors/display
-- USB connection for flashing and serial output
-
-### I²C Devices
-
-The onboard devices used by the current firmware are:
-
-| Device | Address | Function |
-|---|---:|---|
-| LSM6DSL | `0x6A` | Accelerometer + Gyroscope |
-| SSD1306 | `0x3C` | OLED display |
-
-The LSM6DSL is exposed through the Zephyr devicetree as the `accel0` alias.
-
-## Software
-
-- Zephyr RTOS
-- Zephyr Sensor API
-- Zephyr Character Framebuffer (CFB)
-- Zephyr SSD1306 display driver
-- Zephyr LSM6DSL sensor driver
-- West
+- Eclipse ThreadX
+- NetX Duo
+- MXChip board support package (BSP)
+- STM32CubeF4
+- ARM GNU Embedded Toolchain
 - CMake
-- Python/UV virtual environment
+- Ninja
+- Ubuntu 22.04 under WSL on Windows 11
 
-## Project Structure
+## Repository Structure
 
 ```text
 isaac-teleop/
-├── firmware/
-│   ├── app/
-│   │   ├── CMakeLists.txt
-│   │   ├── prj.conf
-│   │   └── src/
-│   │       └── main.c
-│   │
-│   └── zephyr/
-│
-├── pyproject.toml
-└── README.md
+├── README.md
+└── firmware/
+    ├── CMakeLists.txt
+    ├── app/
+    │   ├── CMakeLists.txt
+    │   ├── common/
+    │   └── starter/
+    ├── cmake/
+    │   ├── arm-gcc-cortex-m4.cmake
+    │   ├── arm-gcc-cortex-toolchain.cmake
+    │   ├── FindCMSIS.cmake
+    │   ├── FindSTM32HAL.cmake
+    │   └── utilities.cmake
+    ├── deps/
+    │   ├── lib/
+    │   └── src/
+    ├── lib/
+    │   ├── mxchip_bsp/
+    │   ├── netxduo/
+    │   ├── stm32cubef4/
+    │   ├── threadx/
+    │   └── wiced_sdk/
+    └── scripts/
+        ├── build.ps1
+        ├── build.sh
+        ├── deploy.ps1
+        └── deploy.sh
 ```
 
-## Zephyr Configuration
+### Key Files and Directories
 
-The current application enables:
+| Path | Purpose |
+|---|---|
+| `firmware/app/starter/main.c` | Main application and ThreadX thread setup |
+| `firmware/app/common/` | Shared application code |
+| `firmware/lib/mxchip_bsp/` | Board support package and peripheral drivers |
+| `firmware/lib/threadx/` | ThreadX RTOS |
+| `firmware/lib/netxduo/` | NetX Duo networking stack |
+| `firmware/scripts/build.sh` | Linux/WSL build script |
+| `firmware/scripts/deploy.sh` | Firmware deployment script |
 
-```text
-CONFIG_SERIAL=y
-CONFIG_CONSOLE=y
-CONFIG_UART_CONSOLE=y
-CONFIG_PRINTK=y
+## Implemented Functionality
 
-CONFIG_I2C=y
-CONFIG_SENSOR=y
-CONFIG_LSM6DSL=y
+### IMU Reading
 
-CONFIG_DISPLAY=y
-CONFIG_CHARACTER_FRAMEBUFFER=y
+The firmware reads acceleration and angular velocity from the onboard LSM6DSL using the MXChip sensor driver.
 
-CONFIG_HEAP_MEM_POOL_SIZE=4096
-```
-
-The accelerometer and gyroscope sampling frequency are configured **at runtime** using the Zephyr Sensor API rather than through Kconfig.
-
-Current sampling rate:
-
-```text
-104 Hz
-```
-
-Runtime configuration uses:
+The sensor API defines the following data structure:
 
 ```c
-struct sensor_value odr = {
-    .val1 = 104,
-    .val2 = 0,
-};
-
-sensor_attr_set(
-    imu,
-    SENSOR_CHAN_ACCEL_XYZ,
-    SENSOR_ATTR_SAMPLING_FREQUENCY,
-    &odr
-);
-
-sensor_attr_set(
-    imu,
-    SENSOR_CHAN_GYRO_XYZ,
-    SENSOR_ATTR_SAMPLING_FREQUENCY,
-    &odr
-);
+typedef struct {
+    float acceleration_mg[3];
+    float angular_rate_mdps[3];
+    float temperature_degC;
+} lsm6dsl_data_t;
 ```
 
-## Reading the IMU
-
-The application uses Zephyr's generic sensor API:
+Sensor readings are retrieved using:
 
 ```c
-sensor_sample_fetch(imu);
+lsm6dsl_data_t imu = lsm6dsl_data_read();
 ```
 
-followed by:
+The application currently prints the acceleration and gyroscope measurements as integer values to the console.
 
-```c
-sensor_channel_get(
-    imu,
-    SENSOR_CHAN_ACCEL_XYZ,
-    accel
-);
-
-sensor_channel_get(
-    imu,
-    SENSOR_CHAN_GYRO_XYZ,
-    gyro
-);
-```
-
-No application-level raw I²C register access is required.
-
-## OLED Display
-
-The onboard SSD1306 is already defined by the AZ3166 board's Zephyr devicetree.
-
-The display is accessed through:
-
-```c
-DT_CHOSEN(zephyr_display)
-```
-
-and the Zephyr Character Framebuffer API.
-
-The current display layout shows acceleration and gyroscope values in two columns:
+Example output:
 
 ```text
-ACC                 GYR
-
-X 0.12              X 0.01
-Y -0.04             Y -0.00
-Z 9.78              Z 0.00
+ACC mg: X=318 Y=-173 Z=977
+GYR mdps: X=120 Y=-85 Z=30
 ```
 
-Values are displayed with two decimal places.
+The values shown are illustrative; actual measurements change with the board's orientation and movement.
 
-## Serial Output
+### Measurement Units
 
-The same measurements are printed through the Zephyr console at:
+| Measurement | Unit | Description |
+|---|---|---|
+| Acceleration X, Y, Z | mg | Milligravity |
+| Angular velocity X, Y, Z | mdps | Millidegrees per second |
+| Sensor temperature | °C | Degrees Celsius, available through the sensor data structure |
+
+### OLED Display
+
+The firmware displays accelerometer and gyroscope measurements on the onboard SSD1306 OLED, which has a resolution of 128 × 64 pixels.
+
+The current layout uses two columns:
 
 ```text
-115200 baud
+ACC mg          GYR mdps
+X:  318         X:  120
+Y: -173         Y:  -85
+Z:  977         Z:   30
 ```
 
-Example:
+The display is refreshed periodically by the IMU thread, approximately five times per second.
+
+### ThreadX
+
+The application uses ThreadX threads to execute its tasks. The current application includes an IMU task for reading sensor data, printing measurements, and refreshing the OLED.
+
+### Networking Support
+
+The project includes NetX Duo and the existing MXChip Wi-Fi networking code. The starter application contains the network initialization and connection functions.
+
+## Development Environment
+
+Development is performed in Ubuntu 22.04 under WSL on Windows 11.
+
+Install the required build tools:
+
+```bash
+sudo apt update
+sudo apt install -y cmake ninja-build gcc-arm-none-eabi
+```
+
+Verify the installation:
+
+```bash
+arm-none-eabi-gcc --version
+cmake --version
+ninja --version
+```
+
+## Build Instructions
+
+Navigate to the firmware directory:
+
+```bash
+cd ~/isaac-teleop/firmware
+```
+
+Build the default `starter` configuration:
+
+```bash
+./scripts/build.sh
+```
+
+The build script configures the project with CMake and Ninja and compiles the firmware. The build directory is `firmware/build/`, and the deployment script expects the generated `.bin` file under `firmware/build/app/`.
+
+To clean the existing build directory and reconfigure the project:
+
+```bash
+./scripts/build.sh starter rebuild
+```
+
+To clean the build directory before building again:
+
+```bash
+./scripts/build.sh starter clean
+```
+
+Inspect the generated firmware binaries:
+
+```bash
+find build/app -maxdepth 1 -type f -name '*.bin' -print
+```
+
+## Deployment
+
+Connect the AZ3166 to the PC over USB and identify the drive letter assigned to its storage volume in Windows.
+
+For example, if the board appears as drive `E:`, mount it in WSL:
+
+```bash
+sudo mkdir -p /mnt/e
+sudo mount -t drvfs E: /mnt/e
+```
+
+Check that the destination is accessible:
+
+```bash
+ls -la /mnt/e
+```
+
+Deploy the built firmware:
+
+```bash
+cd ~/isaac-teleop/firmware
+./scripts/deploy.sh /mnt/e
+```
+
+The deployment script copies a `.bin` file from `build/app/` to the specified destination.
+
+The script defaults to `/Volumes/AZ3166`, which is a macOS path. Under WSL, pass the actual mount path explicitly.
+
+If multiple `.bin` files exist in the build directory, check which one is intended before deploying, since the current script selects the first matching file.
+
+## Wi-Fi Configuration
+
+The starter application's Wi-Fi configuration is located at:
 
 ```text
-ACC: 0.123000 -0.042000 9.781000 | GYR: 0.001000 -0.003000 0.002000
+firmware/app/starter/cloud_config.h
 ```
 
-## Building
+Keep Wi-Fi credentials private and do not commit real passwords to the repository.
 
-Activate the UV virtual environment:
+## Current Status
 
-```bash
-source .venv/bin/activate
-```
-
-Build the firmware:
-
-```bash
-cd firmware/app
-west build
-```
-
-For a configuration change, use a pristine build:
-
-```bash
-west build -p always
-```
-
-## Flashing
-
-Connect the AZ3166 through USB and run:
-
-```bash
-west flash
-```
-
-## Serial Console
-
-Open the serial console:
-
-```bash
-screen /dev/ttyACM0 115200
-```
-
-To exit `screen`:
-
-```text
-Ctrl-A
-K
-Y
-```
-
-## Current Data Flow
-
-```text
-          MXChip AZ3166
-                │
-        ┌───────┴───────┐
-        │               │
-     LSM6DSL         SSD1306
-        │               ▲
-        │               │
-        ▼               │
-   Zephyr Sensor    Zephyr CFB
-       API              │
-        │               │
-        └───────┬───────┘
-                │
-             main.c
-                │
-        ┌───────┴───────┐
-        │               │
-      USB/Serial       OLED
-```
+- [x] ThreadX-based firmware project structure
+- [x] LSM6DSL accelerometer readings
+- [x] LSM6DSL gyroscope readings
+- [x] Console output of sensor measurements
+- [x] OLED display of acceleration and angular velocity
+- [x] Existing Wi-Fi networking support in the starter application
+- [x] Build and deployment scripts for the firmware
