@@ -1,8 +1,8 @@
-# Isaac Teleop
+# Tele-Link
 
-Firmware for the MXChip AZ3166 IoT DevKit, developed as the hardware interface for the Isaac Teleop project.
+A real-time IMU telemetry system using the MXChip AZ3166 IoT DevKit, Eclipse ThreadX, UDP over Wi-Fi, and Python-based visualization.
 
-The firmware uses Eclipse ThreadX and reads accelerometer and gyroscope measurements from the onboard LSM6DSL IMU. The measurements are printed to the console and displayed on the onboard SSD1306 OLED.
+The firmware reads accelerometer and gyroscope measurements from the onboard LSM6DSL IMU. Measurements are printed to the console, displayed on the onboard SSD1306 OLED, and transmitted over UDP to a PC for real-time visualization.
 
 ## Hardware
 
@@ -21,52 +21,59 @@ The firmware uses Eclipse ThreadX and reads accelerometer and gyroscope measurem
 - ARM GNU Embedded Toolchain
 - CMake
 - Ninja
+- Python
+- Matplotlib
 - Ubuntu 22.04 under WSL on Windows 11
 
 ## Repository Structure
 
 ```text
-isaac-teleop/
+tele-link/
 ├── README.md
-└── firmware/
-    ├── CMakeLists.txt
-    ├── app/
-    │   ├── CMakeLists.txt
-    │   ├── common/
-    │   └── starter/
-    ├── cmake/
-    │   ├── arm-gcc-cortex-m4.cmake
-    │   ├── arm-gcc-cortex-toolchain.cmake
-    │   ├── FindCMSIS.cmake
-    │   ├── FindSTM32HAL.cmake
-    │   └── utilities.cmake
-    ├── deps/
-    │   ├── lib/
-    │   └── src/
-    ├── lib/
-    │   ├── mxchip_bsp/
-    │   ├── netxduo/
-    │   ├── stm32cubef4/
-    │   ├── threadx/
-    │   └── wiced_sdk/
-    └── scripts/
-        ├── build.ps1
-        ├── build.sh
-        ├── deploy.ps1
-        └── deploy.sh
+├── firmware/
+│   ├── CMakeLists.txt
+│   ├── app/
+│   │   ├── CMakeLists.txt
+│   │   ├── common/
+│   │   └── starter/
+│   ├── cmake/
+│   │   ├── arm-gcc-cortex-m4.cmake
+│   │   ├── arm-gcc-cortex-toolchain.cmake
+│   │   ├── FindCMSIS.cmake
+│   │   ├── FindSTM32HAL.cmake
+│   │   └── utilities.cmake
+│   ├── deps/
+│   │   ├── lib/
+│   │   └── src/
+│   ├── lib/
+│   │   ├── mxchip_bsp/
+│   │   ├── netxduo/
+│   │   ├── stm32cubef4/
+│   │   ├── threadx/
+│   │   └── wiced_sdk/
+│   └── scripts/
+│       ├── build.ps1
+│       ├── build.sh
+│       ├── deploy.ps1
+│       └── deploy.sh
+├── pyproject.toml
+├── imu_receiver.py
+└── imu_visualizer.py
 ```
 
-### Key Files and Directories
+## Key Files and Directories
 
 | Path | Purpose |
 |---|---|
-| `firmware/app/starter/main.c` | Main application and ThreadX thread setup |
-| `firmware/app/common/` | Shared application code |
+| `firmware/app/starter/main.c` | Main firmware application and ThreadX thread setup |
+| `firmware/app/common/` | Shared application and networking code |
 | `firmware/lib/mxchip_bsp/` | Board support package and peripheral drivers |
 | `firmware/lib/threadx/` | ThreadX RTOS |
 | `firmware/lib/netxduo/` | NetX Duo networking stack |
-| `firmware/scripts/build.sh` | Linux/WSL build script |
+| `firmware/scripts/build.sh` | Linux/WSL firmware build script |
 | `firmware/scripts/deploy.sh` | Firmware deployment script |
+| `imu_receiver.py` | Minimal UDP receiver for sensor packets |
+| `imu_visualizer.py` | Real-time accelerometer and gyroscope plots |
 
 ## Implemented Functionality
 
@@ -90,7 +97,7 @@ Sensor readings are retrieved using:
 lsm6dsl_data_t imu = lsm6dsl_data_read();
 ```
 
-The application currently prints the acceleration and gyroscope measurements as integer values to the console.
+The application prints the acceleration and gyroscope measurements as integer values to the console.
 
 Example output:
 
@@ -99,7 +106,7 @@ ACC mg: X=318 Y=-173 Z=977
 GYR mdps: X=120 Y=-85 Z=30
 ```
 
-The values shown are illustrative; actual measurements change with the board's orientation and movement.
+Values are illustrative; actual measurements depend on the board's orientation and movement.
 
 ### Measurement Units
 
@@ -122,21 +129,86 @@ Y: -173         Y:  -85
 Z:  977         Z:   30
 ```
 
-The display is refreshed periodically by the IMU thread, approximately five times per second.
+The display refreshes approximately five times per second.
 
 ### ThreadX
 
-The application uses ThreadX threads to execute its tasks. The current application includes an IMU task for reading sensor data, printing measurements, and refreshing the OLED.
+The application uses ThreadX threads to execute its tasks. The IMU thread reads sensor measurements, prints them to the console, updates the OLED, and sends UDP packets.
 
-### Networking Support
+### Wi-Fi and UDP Telemetry
 
-The project includes NetX Duo and the existing MXChip Wi-Fi networking code. The starter application contains the network initialization and connection functions.
+The firmware uses the existing MXChip Wi-Fi networking code and NetX Duo to connect to the wireless network and transmit IMU measurements to a PC.
+
+The current UDP configuration is:
+
+| Parameter | Value |
+|---|---|
+| Transport | UDP over Wi-Fi |
+| Destination IP | `192.168.0.82` |
+| Destination port | `5005` |
+| Transmission interval | Approximately 200 ms |
+| Approximate transmission rate | 5 packets per second |
+
+Each UDP packet contains seven comma-separated fields:
+
+```text
+timestamp_ticks,acc_x,acc_y,acc_z,gyr_x,gyr_y,gyr_z
+```
+
+Example:
+
+```text
+1234,318,-173,977,120,-85,30
+```
+
+The timestamp is based on the ThreadX tick counter returned by `tx_time_get()`. Its conversion to seconds depends on the configured ThreadX tick rate.
+
+The packet contains three accelerometer measurements in mg and three gyroscope measurements in mdps.
+
+UDP does not guarantee packet delivery or ordering.
+
+## Python Visualization
+
+The Python visualizer receives the UDP packets and displays the sensor measurements as real-time plots using Matplotlib.
+
+It shows two graphs:
+
+- **Accelerometer:** X, Y, and Z acceleration in mg.
+- **Gyroscope:** X, Y, and Z angular velocity in mdps.
+
+The plots maintain a sliding window of the latest 50 samples and update approximately every 40 ms. The receiver runs in a background thread while Matplotlib updates the plots.
+
+### Python Environment
+
+The Python project uses `uv` and `pyproject.toml` to manage its virtual environment and dependencies.
+
+Install `uv` if it is not already installed, then create the environment from the project root:
+
+```bash
+uv sync
+```
+
+Run the visualizer:
+
+```bash
+uv run python imu_visualizer.py
+```
+
+The visualizer listens on `0.0.0.0:5005`, allowing it to receive UDP packets sent to the PC on port `5005`.
+
+The minimal receiver can be run separately:
+
+```bash
+uv run python imu_receiver.py
+```
+
+The PC and board must be able to communicate over the network. Windows Firewall must permit incoming UDP traffic on port `5005`.
 
 ## Development Environment
 
-Development is performed in Ubuntu 22.04 under WSL on Windows 11.
+Firmware development is performed in Ubuntu 22.04 under WSL on Windows 11.
 
-Install the required build tools:
+Install the required firmware build tools:
 
 ```bash
 sudo apt update
@@ -151,12 +223,12 @@ cmake --version
 ninja --version
 ```
 
-## Build Instructions
+## Firmware Build Instructions
 
 Navigate to the firmware directory:
 
 ```bash
-cd ~/isaac-teleop/firmware
+cd ~/tele-link/firmware
 ```
 
 Build the default `starter` configuration:
@@ -167,7 +239,7 @@ Build the default `starter` configuration:
 
 The build script configures the project with CMake and Ninja and compiles the firmware. The build directory is `firmware/build/`, and the deployment script expects the generated `.bin` file under `firmware/build/app/`.
 
-To clean the existing build directory and reconfigure the project:
+To clean the existing build directory and reconfigure:
 
 ```bash
 ./scripts/build.sh starter rebuild
@@ -179,13 +251,13 @@ To clean the build directory before building again:
 ./scripts/build.sh starter clean
 ```
 
-Inspect the generated firmware binaries:
+Inspect generated firmware binaries:
 
 ```bash
 find build/app -maxdepth 1 -type f -name '*.bin' -print
 ```
 
-## Deployment
+## Firmware Deployment
 
 Connect the AZ3166 to the PC over USB and identify the drive letter assigned to its storage volume in Windows.
 
@@ -202,10 +274,10 @@ Check that the destination is accessible:
 ls -la /mnt/e
 ```
 
-Deploy the built firmware:
+Deploy the firmware:
 
 ```bash
-cd ~/isaac-teleop/firmware
+cd ~/tele-link/firmware
 ./scripts/deploy.sh /mnt/e
 ```
 
@@ -213,7 +285,7 @@ The deployment script copies a `.bin` file from `build/app/` to the specified de
 
 The script defaults to `/Volumes/AZ3166`, which is a macOS path. Under WSL, pass the actual mount path explicitly.
 
-If multiple `.bin` files exist in the build directory, check which one is intended before deploying, since the current script selects the first matching file.
+If multiple `.bin` files exist in the build directory, inspect them before deploying because the script selects the first matching file.
 
 ## Wi-Fi Configuration
 
@@ -227,10 +299,13 @@ Keep Wi-Fi credentials private and do not commit real passwords to the repositor
 
 ## Current Status
 
-- [x] ThreadX-based firmware project structure
+- [x] ThreadX-based firmware
 - [x] LSM6DSL accelerometer readings
 - [x] LSM6DSL gyroscope readings
 - [x] Console output of sensor measurements
 - [x] OLED display of acceleration and angular velocity
-- [x] Existing Wi-Fi networking support in the starter application
-- [x] Build and deployment scripts for the firmware
+- [x] Wi-Fi connection
+- [x] UDP transmission of IMU measurements to a PC
+- [x] Python UDP receiver
+- [x] Real-time accelerometer and gyroscope visualization
+- [x] Firmware build and deployment scripts
